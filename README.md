@@ -1,4 +1,4 @@
-# arXiv Terminal — RAG over Foundational ML Papers
+# Marginalia — RAG over Foundational ML Papers
 
 A Retrieval-Augmented Generation (RAG) system that answers questions about six
 foundational machine learning papers — grounded entirely in their text, with
