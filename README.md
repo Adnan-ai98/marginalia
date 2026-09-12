@@ -11,7 +11,7 @@ generation. Frontend is a themed dark "terminal" interface.
 you're reading this, a demo recording is linked below instead.
 
 **Demo**
-!(marginalia_demo_v2.gif)
+(marginalia_demo_v2.gif)
 ---
 
 ## What it does
