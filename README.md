@@ -6,9 +6,9 @@ every answer cited back to its source chunk. Built with FastAPI, PostgreSQL +
 pgvector (via Supabase), hybrid (vector + keyword) search, and Gemini for
 generation. Frontend is a themed dark "terminal" interface.
 
-**Live demo:** _add your Render URL here after deploying_
-**Note:** the free-tier instance sleeps after 15 minutes of inactivity — the
-first request after a while may take ~30-50s to wake it up.
+**Live demo:** https://marginalia-production-3c29.up.railway.app/
+**Note:** hosted on Railway's free trial credit — if the link is down when
+you're reading this, a demo recording is linked below instead.
 
 ---
 
