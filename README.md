@@ -10,7 +10,8 @@ generation. Frontend is a themed dark "terminal" interface.
 **Note:** hosted on Railway's free trial credit — if the link is down when
 you're reading this, a demo recording is linked below instead.
 
-![Demo](marginalia_demo_v2.gif)
+**Demo**
+!(marginalia_demo_v2.gif)
 ---
 
 ## What it does
