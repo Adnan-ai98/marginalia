@@ -72,7 +72,7 @@ def ask(request: Request, payload: Question):
     sources = []
     for source_file, chunk_idx, content, score in results:
         context_blocks.append(f"[Source: {source_file}]\n{content}")
-        sources.append({"file": source_file, "chunk": chunk_idx, "score": round(score, 4)})
+        sources.append({"file": source_file, "chunk": chunk_idx, "score": round(float(score), 4)})
 
     context = "\n\n---\n\n".join(context_blocks)
 
