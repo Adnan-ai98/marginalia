@@ -11,6 +11,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import psycopg2
+from fastapi.responses import StreamingResponse
+import json
 
 from rag_utils import hybrid_search
 
@@ -53,15 +55,17 @@ def health_check():
 @app.post("/ask")
 @limiter.limit("10/minute")
 def ask(request: Request, payload: Question):
-    # ---------- Retrieval ----------
     try:
         results = hybrid_search(payload.query, top_k=payload.top_k)
     except Exception as e:
         logger.error(f"Retrieval failed: {e}")
-        raise HTTPException(status_code=503, detail="The document search is temporarily unavailable. Please try again shortly.")
+        raise HTTPException(status_code=503, detail="Search unavailable.")
 
     if not results:
-        return {"answer": "No relevant information was found in the indexed documents for this question.", "sources": []}
+        def empty_stream():
+            yield json.dumps({"sources": []}) + "\n---\n"
+            yield "No relevant information was found in the indexed documents."
+        return StreamingResponse(empty_stream(), media_type="text/plain")
 
     context_blocks = []
     sources = []
@@ -71,7 +75,13 @@ def ask(request: Request, payload: Question):
 
     context = "\n\n---\n\n".join(context_blocks)
 
-    prompt = f"""Answer the question using ONLY the context below. If the context doesn't contain the answer, say so clearly — do not make up information.
+    prompt = f"""You are answering questions about ML research papers using only the context below.
+
+Rules:
+- Answer directly. Do NOT start with "Based on the provided context" or similar filler.
+- Be concise: 2-4 sentences unless the question needs a list or formula.
+- Use the exact terms/numbers from the context (don't paraphrase technical values).
+- If the context doesn't contain the answer, say so in one sentence — don't guess.
 
 Context:
 {context}
@@ -80,21 +90,25 @@ Question: {payload.query}
 
 Answer:"""
 
-    # ---------- Generation ----------
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=prompt
-        )
-    except APIError as e:
-        logger.error(f"Gemini API error: {e}")
-        raise HTTPException(status_code=503, detail="The answer-generation service is temporarily unavailable. Please try again shortly.")
-    except Exception as e:
-        logger.error(f"Unexpected generation error: {e}")
-        raise HTTPException(status_code=500, detail="Something went wrong generating the answer.")
+    def generate_stream():
+        # Pehle sources bhejo (retrieval already ho chuka hai, instant hai)
+        yield json.dumps({"sources": sources}) + "\n---\n"
 
-    return {"answer": response.text, "sources": sources}
+        # Phir Gemini se stream karo, token-by-token
+        try:
+            stream = client.models.generate_content_stream(
+                model="gemini-3.6-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.3)
+            )
+            for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            yield "\n[Error generating the rest of the answer. Please try again.]"
 
+    return StreamingResponse(generate_stream(), media_type="text/plain")
 
 # ---------- Yeh sabse last mein honi chahiye ----------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
