@@ -32,7 +32,7 @@ def hybrid_search(query, top_k=3, rrf_k=60):
                 WHERE content_tsv @@ plainto_tsquery('english', %(query)s)
             )
             SELECT v.source_file, v.chunk_index, v.content,
-                   (1.0 / (%(k)s + v.rank)) + COALESCE(1.0 / (%(k)s + k.rank), 0) AS score
+                       ((1.0 / (%(k)s + v.rank)) + COALESCE(1.0 / (%(k)s + k.rank), 0))::float AS score
             FROM vector_ranked v
             LEFT JOIN keyword_ranked k ON v.id = k.id
             ORDER BY score DESC
