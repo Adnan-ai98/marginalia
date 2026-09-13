@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 import psycopg2
 from fastapi.responses import StreamingResponse
 import json
+from google.genai import types
 
 from rag_utils import hybrid_search
 
