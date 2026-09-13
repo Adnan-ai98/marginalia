@@ -31,19 +31,59 @@ form.addEventListener('submit', async (e) => {
   entriesContainer.appendChild(entryEl);
   scrollDown();
 
+  const statusEl = entryEl.querySelector('.entry-status');
+  const aEl = entryEl.querySelector('.entry-a');
+
   try {
     const res = await fetch('/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, top_k: 3 })
     });
-    const data = await res.json();
 
-    if (!res.ok) throw new Error(data.detail || 'Request failed.');
+    if (!res.ok) throw new Error('Request failed.');
 
-    fillEntry(entryEl, data);
+    statusEl.textContent = 'answering…';
+    statusEl.classList.remove('pending');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let sourcesParsed = false;
+    let sources = [];
+    aEl.textContent = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      if (!sourcesParsed) {
+        const splitIdx = buffer.indexOf('\n---\n');
+        if (splitIdx === -1) continue;   // header abhi poora nahi aaya
+        const header = buffer.slice(0, splitIdx);
+        sources = JSON.parse(header).sources || [];
+        buffer = buffer.slice(splitIdx + 5);
+        sourcesParsed = true;
+      }
+
+      aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(buffer)}`;
+      scrollDown();
+    }
+
+    statusEl.textContent = 'answered';
+    statusEl.classList.add('ok');
+
+    if (sources.length) {
+      const refsEl = document.createElement('div');
+      refsEl.className = 'refs';
+      refsEl.innerHTML = sources.map(s => `<span class="ref-tag">${escapeHtml(s.file)} #${s.chunk}</span>`).join('');
+      entryEl.appendChild(refsEl);
+    }
   } catch (err) {
-    fillEntryError(entryEl, err.message);
+    statusEl.textContent = 'error';
+    statusEl.classList.add('err');
+    aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(err.message || 'Failed.')}`;
   } finally {
     submitBtn.disabled = false;
     scrollDown();
