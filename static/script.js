@@ -41,33 +41,45 @@ form.addEventListener('submit', async (e) => {
       body: JSON.stringify({ query, top_k: 3 })
     });
 
-    if (!res.ok) throw new Error('Request failed.');
+    if (!res.ok || !res.body) throw new Error('Request failed.');
 
     statusEl.textContent = 'answering…';
     statusEl.classList.remove('pending');
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+
+    let raw = '';          // sab kuch jo ab tak server se aaya (header + answer)
+    let answerText = '';   // sirf answer ka hissa, header nikalne ke baad
     let sourcesParsed = false;
     let sources = [];
+
     aEl.textContent = '';
 
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+
+      raw += decoder.decode(value, { stream: true });
 
       if (!sourcesParsed) {
-        const splitIdx = buffer.indexOf('\n---\n');
-        if (splitIdx === -1) continue;   // header abhi poora nahi aaya
-        const header = buffer.slice(0, splitIdx);
-        sources = JSON.parse(header).sources || [];
-        buffer = buffer.slice(splitIdx + 5);
+        const splitIdx = raw.indexOf('\n---\n');
+        if (splitIdx === -1) {
+          continue;   // header abhi poora nahi aaya, wait karo
+        }
+        const header = raw.slice(0, splitIdx);
+        try {
+          sources = JSON.parse(header).sources || [];
+        } catch (_) {
+          sources = [];
+        }
+        answerText = raw.slice(splitIdx + 5);   // jo bhi header ke baad bacha hai
         sourcesParsed = true;
+      } else {
+        answerText = raw.slice(raw.indexOf('\n---\n') + 5);
       }
 
-      aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(buffer)}`;
+      aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(answerText)}`;
       scrollDown();
     }
 
@@ -77,13 +89,15 @@ form.addEventListener('submit', async (e) => {
     if (sources.length) {
       const refsEl = document.createElement('div');
       refsEl.className = 'refs';
-      refsEl.innerHTML = sources.map(s => `<span class="ref-tag">${escapeHtml(s.file)} #${s.chunk}</span>`).join('');
+      refsEl.innerHTML = sources
+        .map(s => `<span class="ref-tag">${escapeHtml(s.file)} #${s.chunk}</span>`)
+        .join('');
       entryEl.appendChild(refsEl);
     }
   } catch (err) {
     statusEl.textContent = 'error';
     statusEl.classList.add('err');
-    aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(err.message || 'Failed.')}`;
+    aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(err.message || 'The query failed.')}`;
   } finally {
     submitBtn.disabled = false;
     scrollDown();
@@ -99,35 +113,6 @@ function createPendingEntry(query) {
     <p class="entry-a"><span class="dots-anim"><span></span><span></span><span></span></span></p>
   `;
   return div;
-}
-
-function fillEntry(entryEl, data) {
-  const statusEl = entryEl.querySelector('.entry-status');
-  statusEl.textContent = 'answered';
-  statusEl.classList.remove('pending');
-  statusEl.classList.add('ok');
-
-  const aEl = entryEl.querySelector('.entry-a');
-  aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(data.answer)}`;
-
-  if (data.sources && data.sources.length) {
-    const refsEl = document.createElement('div');
-    refsEl.className = 'refs';
-    refsEl.innerHTML = data.sources
-      .map(s => `<span class="ref-tag">${escapeHtml(s.file)} #${s.chunk}</span>`)
-      .join('');
-    entryEl.appendChild(refsEl);
-  }
-}
-
-function fillEntryError(entryEl, message) {
-  const statusEl = entryEl.querySelector('.entry-status');
-  statusEl.textContent = 'error';
-  statusEl.classList.remove('pending');
-  statusEl.classList.add('err');
-
-  const aEl = entryEl.querySelector('.entry-a');
-  aEl.innerHTML = `<span class="prompt-sym">&gt;</span>${escapeHtml(message || 'The query failed.')}`;
 }
 
 function escapeHtml(str) {
