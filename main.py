@@ -100,7 +100,7 @@ Answer:"""
             stream = client.models.generate_content_stream(
                 model="gemini-3.6-flash",
                 contents=prompt,
-                config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.3)
+                config=types.GenerateContentConfig(max_output_tokens=1024, temperature=0.3,thinking_config=types.ThinkingConfig(thinking_level="low"))
             )
             for chunk in stream:
                 if chunk.text:
