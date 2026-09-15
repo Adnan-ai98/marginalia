@@ -127,7 +127,7 @@ class Question(BaseModel):
     )
 
     top_k: int = Field(
-        default=5,
+        default=2,
         ge=1,
         le=10,
     )
