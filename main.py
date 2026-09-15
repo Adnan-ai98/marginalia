@@ -14,6 +14,7 @@ import psycopg2
 from fastapi.responses import StreamingResponse
 import json
 from google.genai import types
+from llm_router import generate_answer_stream
 
 from rag_utils import hybrid_search
 
@@ -108,14 +109,18 @@ Answer:"""
         except Exception as e:
             logger.error(f"Generation error: {e}")
             yield "\n[Error generating the rest of the answer. Please try again.]"
+    def stream_response():
+        yield json.dumps({"sources": sources}) + "\n---\n"
+        yield from generate_answer_stream(prompt)
 
-    return StreamingResponse(
-    stream(),
-    media_type="text/plain",
-    headers={
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",   # reverse-proxy (jaisa Railway ka) ko batata hai buffer mat karo
-        "Connection": "keep-alive",
+    
+        return StreamingResponse(
+        stream(),
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # reverse-proxy (jaisa Railway ka) ko batata hai buffer mat karo
+            "Connection": "keep-alive",
     }
 )
 
