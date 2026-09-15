@@ -57,52 +57,142 @@ def health_check():
 @app.post("/ask")
 @limiter.limit("10/minute")
 def ask(request: Request, payload: Question):
-    try:
-        results = hybrid_search(payload.query, top_k=payload.top_k)
-    except Exception as e:
-        logger.error(f"Retrieval failed: {e}")
-        raise HTTPException(status_code=503, detail="Search unavailable.")
 
+    logger.info("Incoming question: %s", payload.query)
+
+    # -------------------------
+    # 1. RETRIEVAL
+    # -------------------------
+    try:
+        results = hybrid_search(
+            payload.query,
+            top_k=payload.top_k
+        )
+
+        logger.info(
+            "Retrieved %d chunks for query: %s",
+            len(results),
+            payload.query
+        )
+
+    except Exception as e:
+        logger.exception("Retrieval failed")
+
+        raise HTTPException(
+            status_code=503,
+            detail=f"Search failed: {str(e)}"
+        )
+
+    # -------------------------
+    # 2. NO RESULTS
+    # -------------------------
     if not results:
+
         def empty_stream():
-            yield json.dumps({"sources": []}) + "\n---\n"
-            yield "No relevant information was found in the indexed documents."
+            yield json.dumps({
+                "sources": [],
+                "status": "no_results"
+            }) + "\n---\n"
+
+            yield (
+                "I couldn't find relevant information "
+                "in the indexed papers."
+            )
+
         return StreamingResponse(
             empty_stream(),
             media_type="text/plain",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no"
+            }
         )
 
-    context_blocks, sources = [], []
+    # -------------------------
+    # 3. BUILD CONTEXT
+    # -------------------------
+    context_blocks = []
+    sources = []
+
     for source_file, chunk_idx, content, score in results:
-        context_blocks.append(f"[Source: {source_file}]\n{content}")
-        sources.append({"file": source_file, "chunk": chunk_idx, "score": round(float(score), 4)})
+
+        context_blocks.append(
+            f"[Source: {source_file}]\n{content}"
+        )
+
+        sources.append({
+            "file": source_file,
+            "chunk": chunk_idx,
+            "score": round(float(score), 4)
+        })
 
     context = "\n\n---\n\n".join(context_blocks)
 
-    prompt = f"""You are answering questions about ML research papers using only the context below.
+    # -------------------------
+    # 4. GROUNDED PROMPT
+    # -------------------------
+    prompt = f"""
+You are a RAG assistant answering questions about
+foundational machine-learning research papers.
 
-Rules:
-- Answer directly. Do NOT start with "Based on the provided context" or similar filler.
-- Be concise: 2-4 sentences unless the question needs a list or formula.
-- Use the exact terms/numbers from the context (don't paraphrase technical values).
-- If the context doesn't contain the answer, say so in one sentence — don't guess.
+IMPORTANT RULES:
 
-Context:
+1. Answer ONLY using the supplied context.
+2. Do not use outside knowledge.
+3. If the answer is not present in the context,
+   say that it is not available in the indexed papers.
+4. Answer directly.
+5. Keep the answer concise and technically accurate.
+6. Preserve exact numbers, names, and technical terminology
+   from the source.
+7. Do not mention "provided context".
+
+CONTEXT:
+
 {context}
 
-Question: {payload.query}
+QUESTION:
 
-Answer:"""
+{payload.query}
 
+ANSWER:
+"""
+
+    logger.info(
+        "Sending %d characters of context to Gemini",
+        len(context)
+    )
+
+    # -------------------------
+    # 5. STREAM ANSWER
+    # -------------------------
     def stream_response():
-        yield json.dumps({"sources": sources}) + "\n---\n"
-        yield from generate_answer_stream(prompt)
+
+        yield json.dumps({
+            "sources": sources,
+            "status": "generating"
+        }) + "\n---\n"
+
+        try:
+            yield from generate_answer_stream(prompt)
+
+        except Exception as e:
+            logger.exception("Streaming generation failed")
+
+            yield (
+                "\n[Generation failed: "
+                + str(e)
+                + "]"
+            )
 
     return StreamingResponse(
         stream_response(),
         media_type="text/plain",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive"
+        }
     )
 # ---------- Yeh sabse last mein honi chahiye ----------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
