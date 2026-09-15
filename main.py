@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
@@ -12,7 +13,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import psycopg2
 from fastapi.responses import StreamingResponse
-import json
 from google.genai import types
 from llm_router import generate_answer_stream
 
