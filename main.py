@@ -109,7 +109,15 @@ Answer:"""
             logger.error(f"Generation error: {e}")
             yield "\n[Error generating the rest of the answer. Please try again.]"
 
-    return StreamingResponse(generate_stream(), media_type="text/plain")
+    return StreamingResponse(
+    stream(),
+    media_type="text/plain",
+    headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",   # reverse-proxy (jaisa Railway ka) ko batata hai buffer mat karo
+        "Connection": "keep-alive",
+    }
+)
 
 # ---------- Yeh sabse last mein honi chahiye ----------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
