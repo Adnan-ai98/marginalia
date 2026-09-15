@@ -13,7 +13,7 @@ db_pool = pool.SimpleConnectionPool(
     dsn=os.getenv("DATABASE_URL")
 )
 
-def hybrid_search(query, top_k=3, rrf_k=60):
+def hybrid_search(query, top_k=2, rrf_k=60):
     query_embedding = embed_model.encode(query).tolist()
 
     conn = db_pool.getconn()   # naya connection nahi, pool se lo
