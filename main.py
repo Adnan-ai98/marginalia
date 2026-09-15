@@ -67,10 +67,13 @@ def ask(request: Request, payload: Question):
         def empty_stream():
             yield json.dumps({"sources": []}) + "\n---\n"
             yield "No relevant information was found in the indexed documents."
-        return StreamingResponse(empty_stream(), media_type="text/plain")
+        return StreamingResponse(
+            empty_stream(),
+            media_type="text/plain",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+        )
 
-    context_blocks = []
-    sources = []
+    context_blocks, sources = [], []
     for source_file, chunk_idx, content, score in results:
         context_blocks.append(f"[Source: {source_file}]\n{content}")
         sources.append({"file": source_file, "chunk": chunk_idx, "score": round(float(score), 4)})
@@ -92,37 +95,14 @@ Question: {payload.query}
 
 Answer:"""
 
-    def generate_stream():
-        # Pehle sources bhejo (retrieval already ho chuka hai, instant hai)
-        yield json.dumps({"sources": sources}) + "\n---\n"
-
-        # Phir Gemini se stream karo, token-by-token
-        try:
-            stream = client.models.generate_content_stream(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(max_output_tokens=1024, temperature=0.3,thinking_config=types.ThinkingConfig(thinking_level="low"))
-            )
-            for chunk in stream:
-                if chunk.text:
-                    yield chunk.text
-        except Exception as e:
-            logger.error(f"Generation error: {e}")
-            yield "\n[Error generating the rest of the answer. Please try again.]"
     def stream_response():
         yield json.dumps({"sources": sources}) + "\n---\n"
         yield from generate_answer_stream(prompt)
 
-    
-        return StreamingResponse(
-        stream(),
+    return StreamingResponse(
+        stream_response(),
         media_type="text/plain",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # reverse-proxy (jaisa Railway ka) ko batata hai buffer mat karo
-            "Connection": "keep-alive",
-    }
-)
-
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    )
 # ---------- Yeh sabse last mein honi chahiye ----------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
