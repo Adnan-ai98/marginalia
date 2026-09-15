@@ -139,7 +139,7 @@ form.addEventListener(
                         body: JSON.stringify(
                             {
                                 query: query,
-                                top_k: 5,
+                                top_k: 2,
                             }
                         ),
                     }
