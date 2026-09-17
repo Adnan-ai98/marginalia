@@ -1,23 +1,552 @@
+// ============================================================
+// ELEMENTS
+// ============================================================
+
 const form =
-    document.getElementById('query-form');
+    document.getElementById("query-form");
 
 const input =
-    document.getElementById('query-input');
+    document.getElementById("query-input");
 
 const submitBtn =
-    document.getElementById('submit-btn');
+    document.getElementById("submit-btn");
 
 const entriesContainer =
-    document.getElementById('entries');
+    document.getElementById("entries");
 
 const screen =
-    document.getElementById('screen');
+    document.getElementById("screen");
 
 const suggestions =
-    document.getElementById('suggestions');
+    document.getElementById("suggestions");
 
 const resetBtn =
-    document.getElementById('reset-btn');
+    document.getElementById("reset-btn");
+
+const paperSelect =
+    document.getElementById("paper-select");
+
+const paperList =
+    document.getElementById("paper-list");
+
+const paperStatus =
+    document.getElementById("paper-status");
+
+const scopeBadge =
+    document.getElementById("scope-badge");
+
+const uploadBtn =
+    document.getElementById("upload-btn");
+
+const fileInput =
+    document.getElementById("file-input");
+
+const uploadStatus =
+    document.getElementById("upload-status");
+
+
+// ============================================================
+// STATE
+// ============================================================
+
+let papers = [];
+
+
+// ============================================================
+// LOAD PAPERS
+// ============================================================
+
+async function loadPapers() {
+
+    try {
+
+        const response =
+            await fetch("/papers");
+
+        if (!response.ok) {
+
+            throw new Error(
+                `Failed to load papers (${response.status}).`
+            );
+        }
+
+        const data =
+            await response.json();
+
+        papers =
+            data.papers || [];
+
+        renderPaperSelector();
+
+        renderPaperList();
+
+        updateScope();
+
+
+    } catch (error) {
+
+        console.error(
+            "Paper loading error:",
+            error
+        );
+
+        paperStatus.textContent =
+            "Could not load indexed papers.";
+
+        paperList.innerHTML = `
+            <li class="paper-error">
+                Failed to load papers.
+            </li>
+        `;
+    }
+}
+
+
+// ============================================================
+// RENDER PAPER SELECTOR
+// ============================================================
+
+function renderPaperSelector() {
+
+    const currentValue =
+        paperSelect.value;
+
+    paperSelect.innerHTML = "";
+
+
+    const allOption =
+        document.createElement("option");
+
+    allOption.value = "";
+
+    allOption.textContent =
+        "All Papers";
+
+    paperSelect.appendChild(
+        allOption
+    );
+
+
+    papers.forEach(
+        (paper) => {
+
+            const option =
+                document.createElement("option");
+
+            option.value =
+                paper.filename;
+
+            option.textContent =
+                paper.title;
+
+            option.title =
+                paper.filename;
+
+            paperSelect.appendChild(
+                option
+            );
+        }
+    );
+
+
+    if (
+        currentValue &&
+        papers.some(
+            (paper) =>
+                paper.filename === currentValue
+        )
+    ) {
+
+        paperSelect.value =
+            currentValue;
+
+    } else {
+
+        paperSelect.value = "";
+    }
+}
+
+
+// ============================================================
+// RENDER PAPER LIST
+// ============================================================
+
+function renderPaperList() {
+
+    if (!papers.length) {
+
+        paperList.innerHTML = `
+            <li class="paper-loading">
+                No papers indexed yet.
+            </li>
+        `;
+
+        paperStatus.textContent =
+            "Indexed 0 papers.";
+
+        return;
+    }
+
+
+    paperList.innerHTML =
+        papers
+            .map(
+                (paper, index) => {
+
+                    const number =
+                        String(index + 1)
+                            .padStart(2, "0");
+
+                    return `
+                        <li>
+                            <span class="tag">
+                                [${number}]
+                            </span>
+
+                            <span class="paper-title">
+                                ${escapeHtml(
+                                    paper.title
+                                )}
+                            </span>
+
+                            <span class="dim paper-meta">
+                                — ${paper.chunks} chunks
+                            </span>
+                        </li>
+                    `;
+                }
+            )
+            .join("");
+
+
+    const totalChunks =
+        papers.reduce(
+            (total, paper) =>
+                total +
+                Number(paper.chunks || 0),
+            0
+        );
+
+
+    paperStatus.textContent =
+        `Indexed ${papers.length} papers → ` +
+        `${totalChunks} chunks → pgvector`;
+}
+
+
+// ============================================================
+// PAPER SELECTION
+// ============================================================
+
+paperSelect.addEventListener(
+    "change",
+    () => {
+
+        updateScope();
+
+        updatePlaceholder();
+
+        input.focus();
+    }
+);
+
+
+// ============================================================
+// UPDATE SCOPE BADGE
+// ============================================================
+
+function updateScope() {
+
+    const selected =
+        paperSelect.value;
+
+    if (!selected) {
+
+        scopeBadge.textContent =
+            "ALL PAPERS";
+
+        scopeBadge.classList.remove(
+            "paper-selected"
+        );
+
+        return;
+    }
+
+
+    const paper =
+        papers.find(
+            (item) =>
+                item.filename === selected
+        );
+
+
+    if (paper) {
+
+        scopeBadge.textContent =
+            truncate(
+                paper.title,
+                32
+            );
+
+    } else {
+
+        scopeBadge.textContent =
+            "SELECTED PAPER";
+    }
+
+
+    scopeBadge.classList.add(
+        "paper-selected"
+    );
+}
+
+
+// ============================================================
+// PLACEHOLDER
+// ============================================================
+
+function updatePlaceholder() {
+
+    const selected =
+        paperSelect.value;
+
+
+    if (!selected) {
+
+        input.placeholder =
+            "ask a question about the papers…";
+
+        return;
+    }
+
+
+    const paper =
+        papers.find(
+            (item) =>
+                item.filename === selected
+        );
+
+
+    if (paper) {
+
+        input.placeholder =
+            `ask about ${paper.title}…`;
+
+    } else {
+
+        input.placeholder =
+            "ask a question about the selected paper…";
+    }
+}
+
+
+// ============================================================
+// UPLOAD BUTTON
+// ============================================================
+
+uploadBtn.addEventListener(
+    "click",
+    () => {
+
+        fileInput.click();
+    }
+);
+
+
+// ============================================================
+// FILE SELECTED
+// ============================================================
+
+fileInput.addEventListener(
+    "change",
+    async () => {
+
+        const file =
+            fileInput.files[0];
+
+        if (!file) return;
+
+        await uploadPaper(file);
+
+        fileInput.value = "";
+    }
+);
+
+
+// ============================================================
+// UPLOAD PAPER
+// ============================================================
+
+async function uploadPaper(file) {
+
+    const maxSize =
+        25 * 1024 * 1024;
+
+
+    if (file.size > maxSize) {
+
+        showUploadStatus(
+            "File is larger than 25 MB.",
+            "error"
+        );
+
+        return;
+    }
+
+
+    const allowed =
+        [
+            ".pdf",
+            ".md",
+            ".txt",
+        ];
+
+
+    const lowerName =
+        file.name.toLowerCase();
+
+
+    const isAllowed =
+        allowed.some(
+            (extension) =>
+                lowerName.endsWith(
+                    extension
+                )
+        );
+
+
+    if (!isAllowed) {
+
+        showUploadStatus(
+            "Only PDF, MD, and TXT files are supported.",
+            "error"
+        );
+
+        return;
+    }
+
+
+    uploadBtn.disabled = true;
+
+
+    showUploadStatus(
+        `Indexing ${file.name}…`,
+        "loading"
+    );
+
+
+    try {
+
+        const formData =
+            new FormData();
+
+        formData.append(
+            "file",
+            file
+        );
+
+
+        const response =
+            await fetch(
+                "/upload",
+                {
+                    method: "POST",
+                    body: formData,
+                }
+            );
+
+
+        let data = null;
+
+        try {
+
+            data =
+                await response.json();
+
+        } catch (_) {
+
+            data = null;
+        }
+
+
+        if (!response.ok) {
+
+            const message =
+                data &&
+                data.detail
+                    ? data.detail
+                    : `Upload failed (${response.status}).`;
+
+            throw new Error(
+                message
+            );
+        }
+
+
+        showUploadStatus(
+            `✓ Added ${data.filename} — ${data.chunks} chunks`,
+            "success"
+        );
+
+
+        await loadPapers();
+
+
+        // Automatically select newly uploaded paper.
+        paperSelect.value =
+            data.filename;
+
+        updateScope();
+
+        updatePlaceholder();
+
+        input.focus();
+
+
+    } catch (error) {
+
+        console.error(
+            "Upload error:",
+            error
+        );
+
+        showUploadStatus(
+            error.message ||
+            "Upload failed.",
+            "error"
+        );
+
+    } finally {
+
+        uploadBtn.disabled =
+            false;
+    }
+}
+
+
+// ============================================================
+// UPLOAD STATUS
+// ============================================================
+
+function showUploadStatus(
+    message,
+    type
+) {
+
+    uploadStatus.textContent =
+        message;
+
+    uploadStatus.className =
+        "upload-status";
+
+
+    if (type) {
+
+        uploadStatus.classList.add(
+            type
+        );
+    }
+}
 
 
 // ============================================================
@@ -27,11 +556,13 @@ const resetBtn =
 if (suggestions) {
 
     suggestions.addEventListener(
-        'click',
-        (e) => {
+        "click",
+        (event) => {
 
             const chip =
-                e.target.closest('.chip');
+                event.target.closest(
+                    ".chip"
+                );
 
             if (!chip) return;
 
@@ -51,13 +582,14 @@ if (suggestions) {
 if (resetBtn) {
 
     resetBtn.addEventListener(
-        'click',
+        "click",
         () => {
 
             entriesContainer.innerHTML =
-                '';
+                "";
 
-            input.value = '';
+            input.value =
+                "";
 
             input.focus();
         }
@@ -70,10 +602,10 @@ if (resetBtn) {
 // ============================================================
 
 form.addEventListener(
-    'submit',
-    async (e) => {
+    "submit",
+    async (event) => {
 
-        e.preventDefault();
+        event.preventDefault();
 
 
         const query =
@@ -83,17 +615,25 @@ form.addEventListener(
         if (!query) return;
 
 
+        const selectedPaper =
+            paperSelect.value ||
+            null;
+
+
         // ----------------------------------------------------
         // LOCK UI
         // ----------------------------------------------------
 
-        input.value = '';
+        input.value = "";
 
         submitBtn.disabled = true;
 
 
         const entryEl =
-            createPendingEntry(query);
+            createPendingEntry(
+                query,
+                selectedPaper
+            );
 
 
         entriesContainer.appendChild(
@@ -106,13 +646,13 @@ form.addEventListener(
 
         const statusEl =
             entryEl.querySelector(
-                '.entry-status'
+                ".entry-status"
             );
 
 
         const aEl =
             entryEl.querySelector(
-                '.entry-a'
+                ".entry-a"
             );
 
 
@@ -122,26 +662,33 @@ form.addEventListener(
             // API REQUEST
             // =================================================
 
-            const res =
+            const response =
                 await fetch(
-                    '/ask',
+                    "/ask",
                     {
-                        method: 'POST',
+                        method: "POST",
 
                         headers: {
-                            'Content-Type':
-                                'application/json',
+                            "Content-Type":
+                                "application/json",
 
-                            'Accept':
-                                'text/plain',
+                            "Accept":
+                                "text/plain",
                         },
 
-                        body: JSON.stringify(
-                            {
-                                query: query,
-                                top_k: 2,
-                            }
-                        ),
+                        body:
+                            JSON.stringify(
+                                {
+                                    query:
+                                        query,
+
+                                    top_k:
+                                        2,
+
+                                    source_file:
+                                        selectedPaper,
+                                }
+                            ),
                     }
                 );
 
@@ -150,16 +697,16 @@ form.addEventListener(
             // HTTP ERROR
             // =================================================
 
-            if (!res.ok) {
+            if (!response.ok) {
 
                 let errorMessage =
-                    `Request failed (${res.status}).`;
+                    `Request failed (${response.status}).`;
 
 
                 try {
 
                     const errorText =
-                        await res.text();
+                        await response.text();
 
 
                     if (errorText) {
@@ -185,7 +732,6 @@ form.addEventListener(
                                     errorText;
                             }
 
-
                         } catch (_) {
 
                             errorMessage =
@@ -193,9 +739,8 @@ form.addEventListener(
                         }
                     }
 
-
                 } catch (_) {
-                    // Keep default message.
+                    // Keep default.
                 }
 
 
@@ -209,20 +754,19 @@ form.addEventListener(
             // STREAM CHECK
             // =================================================
 
-            if (!res.body) {
+            if (!response.body) {
 
                 throw new Error(
-                    'The server returned no response stream.'
+                    "The server returned no response stream."
                 );
             }
 
 
             statusEl.textContent =
-                'answering…';
-
+                "answering…";
 
             statusEl.classList.remove(
-                'pending'
+                "pending"
             );
 
 
@@ -231,24 +775,26 @@ form.addEventListener(
             // =================================================
 
             const reader =
-                res.body.getReader();
-
+                response.body.getReader();
 
             const decoder =
                 new TextDecoder();
 
 
-            let raw = '';
+            let raw = "";
 
-            let answerText = '';
+            let answerText =
+                "";
 
-            let sourcesParsed = false;
+            let sourcesParsed =
+                false;
 
-            let sources = [];
+            let sources =
+                [];
 
 
             aEl.textContent =
-                '';
+                "";
 
 
             // =================================================
@@ -284,14 +830,14 @@ form.addEventListener(
 
                 if (!sourcesParsed) {
 
-                    const splitIdx =
+                    const splitIndex =
                         raw.indexOf(
-                            '\n---\n'
+                            "\n---\n"
                         );
 
 
                     if (
-                        splitIdx === -1
+                        splitIndex === -1
                     ) {
 
                         continue;
@@ -301,7 +847,7 @@ form.addEventListener(
                     const header =
                         raw.slice(
                             0,
-                            splitIdx
+                            splitIndex
                         );
 
 
@@ -312,11 +858,9 @@ form.addEventListener(
                                 header
                             );
 
-
                         sources =
                             parsed.sources ||
                             [];
-
 
                     } catch (_) {
 
@@ -326,7 +870,7 @@ form.addEventListener(
 
                     answerText =
                         raw.slice(
-                            splitIdx + 5
+                            splitIndex + 5
                         );
 
 
@@ -336,19 +880,19 @@ form.addEventListener(
 
                 } else {
 
-                    const splitIdx =
+                    const splitIndex =
                         raw.indexOf(
-                            '\n---\n'
+                            "\n---\n"
                         );
 
 
                     if (
-                        splitIdx !== -1
+                        splitIndex !== -1
                     ) {
 
                         answerText =
                             raw.slice(
-                                splitIdx + 5
+                                splitIndex + 5
                             );
 
                     } else {
@@ -394,19 +938,19 @@ form.addEventListener(
 
             if (sourcesParsed) {
 
-                const splitIdx =
+                const splitIndex =
                     raw.indexOf(
-                        '\n---\n'
+                        "\n---\n"
                     );
 
 
                 if (
-                    splitIdx !== -1
+                    splitIndex !== -1
                 ) {
 
                     answerText =
                         raw.slice(
-                            splitIdx + 5
+                            splitIndex + 5
                         );
 
                 } else {
@@ -429,11 +973,10 @@ form.addEventListener(
             // =================================================
 
             statusEl.textContent =
-                'answered';
-
+                "answered";
 
             statusEl.classList.add(
-                'ok'
+                "ok"
             );
 
 
@@ -447,24 +990,24 @@ form.addEventListener(
 
                 const refsEl =
                     document.createElement(
-                        'div'
+                        "div"
                     );
 
 
                 refsEl.className =
-                    'refs';
+                    "refs";
 
 
                 refsEl.innerHTML =
                     sources
                         .map(
-                            (s) => {
+                            (source) => {
 
                                 const file =
                                     escapeHtml(
                                         String(
-                                            s.file ??
-                                            ''
+                                            source.file ??
+                                            ""
                                         )
                                     );
 
@@ -472,20 +1015,20 @@ form.addEventListener(
                                 const chunk =
                                     escapeHtml(
                                         String(
-                                            s.chunk ??
-                                            ''
+                                            source.chunk ??
+                                            ""
                                         )
                                     );
 
 
-                                return (
-                                    `<span class="ref-tag">` +
-                                    `${file} #${chunk}` +
-                                    `</span>`
-                                );
+                                return `
+                                    <span class="ref-tag">
+                                        ${file} #${chunk}
+                                    </span>
+                                `;
                             }
                         )
-                        .join('');
+                        .join("");
 
 
                 entryEl.appendChild(
@@ -494,26 +1037,32 @@ form.addEventListener(
             }
 
 
-        } catch (err) {
+        } catch (error) {
 
             // =================================================
             // ERROR
             // =================================================
 
+            console.error(
+                "Query error:",
+                error
+            );
+
+
             statusEl.textContent =
-                'error';
+                "error";
 
 
             statusEl.classList.add(
-                'err'
+                "err"
             );
 
 
             const message =
-                err &&
-                err.message
-                    ? err.message
-                    : 'The query failed.';
+                error &&
+                error.message
+                    ? error.message
+                    : "The query failed.";
 
 
             aEl.innerHTML =
@@ -532,9 +1081,7 @@ form.addEventListener(
             submitBtn.disabled =
                 false;
 
-
             input.focus();
-
 
             scrollDown();
         }
@@ -547,36 +1094,58 @@ form.addEventListener(
 // ============================================================
 
 function createPendingEntry(
-    query
+    query,
+    selectedPaper
 ) {
 
     const div =
         document.createElement(
-            'div'
+            "div"
         );
 
 
     div.className =
-        'entry';
+        "entry";
+
+
+    const scopeText =
+        selectedPaper
+            ? `paper: ${selectedPaper}`
+            : "scope: all papers";
 
 
     div.innerHTML = `
+
         <span class="entry-status pending">
             retrieving…
         </span>
 
         <p class="entry-q">
-            <span class="prompt-sym">$</span>
+
+            <span class="prompt-sym">
+                $
+            </span>
+
             ${escapeHtml(query)}
+
         </p>
 
+        <div class="entry-scope">
+            ${escapeHtml(scopeText)}
+        </div>
+
         <p class="entry-a">
+
             <span class="dots-anim">
+
                 <span></span>
                 <span></span>
                 <span></span>
+
             </span>
+
         </p>
+
     `;
 
 
@@ -589,20 +1158,50 @@ function createPendingEntry(
 // ============================================================
 
 function escapeHtml(
-    str
+    value
 ) {
 
     const div =
         document.createElement(
-            'div'
+            "div"
         );
 
 
     div.textContent =
-        String(str);
+        String(value);
 
 
     return div.innerHTML;
+}
+
+
+// ============================================================
+// TRUNCATE
+// ============================================================
+
+function truncate(
+    value,
+    maxLength
+) {
+
+    const text =
+        String(value || "");
+
+
+    if (
+        text.length <= maxLength
+    ) {
+
+        return text;
+    }
+
+
+    return (
+        text.slice(
+            0,
+            maxLength - 1
+        ) + "…"
+    );
 }
 
 
@@ -618,3 +1217,14 @@ function scrollDown() {
     screen.scrollTop =
         screen.scrollHeight;
 }
+
+
+// ============================================================
+// INITIALIZE
+// ============================================================
+
+loadPapers();
+
+updatePlaceholder();
+
+input.focus();
