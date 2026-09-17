@@ -1,35 +1,56 @@
-import os
 import json
 import logging
+import os
+
+import psycopg2
 
 from dotenv import load_dotenv
 
 from fastapi import (
     FastAPI,
-    Request,
+    File,
     HTTPException,
+    Request,
+    UploadFile,
 )
-
-from fastapi.staticfiles import StaticFiles
 
 from fastapi.responses import (
     JSONResponse,
     StreamingResponse,
 )
 
+from fastapi.staticfiles import StaticFiles
+
 from pydantic import (
     BaseModel,
     Field,
 )
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from slowapi import (
+    Limiter,
+    _rate_limit_exceeded_handler,
+)
 
-import psycopg2
+from slowapi.errors import (
+    RateLimitExceeded,
+)
 
-from llm_router import generate_answer_stream
-from rag_utils import hybrid_search
+from slowapi.util import (
+    get_remote_address,
+)
+
+from document_manager import (
+    add_document,
+    list_papers,
+)
+
+from llm_router import (
+    generate_answer_stream,
+)
+
+from rag_utils import (
+    hybrid_search,
+)
 
 
 # ============================================================
@@ -45,12 +66,6 @@ load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
-    format=(
-        "%(asctime)s | "
-        "%(levelname)s | "
-        "%(name)s | "
-        "%(message)s"
-    ),
 )
 
 logger = logging.getLogger(
@@ -59,7 +74,7 @@ logger = logging.getLogger(
 
 
 # ============================================================
-# ENVIRONMENT VALIDATION
+# ENV VALIDATION
 # ============================================================
 
 required_env = [
@@ -74,7 +89,6 @@ missing = [
 ]
 
 if missing:
-
     raise RuntimeError(
         "Missing required environment variables: "
         + ", ".join(missing)
@@ -82,7 +96,7 @@ if missing:
 
 
 # ============================================================
-# FASTAPI
+# APP
 # ============================================================
 
 app = FastAPI(
@@ -102,15 +116,7 @@ app.state.limiter = limiter
 
 app.add_exception_handler(
     RateLimitExceeded,
-    lambda request, exc: JSONResponse(
-        status_code=429,
-        content={
-            "detail": (
-                "Too many requests. "
-                "Please try again later."
-            )
-        },
-    ),
+    _rate_limit_exceeded_handler,
 )
 
 
@@ -127,14 +133,19 @@ class Question(BaseModel):
     )
 
     top_k: int = Field(
-        default=2,
+        default=3,
         ge=1,
         le=10,
     )
 
+    source_file: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
 
 # ============================================================
-# HEALTH CHECK
+# HEALTH
 # ============================================================
 
 @app.get("/health")
@@ -154,11 +165,11 @@ def health_check():
             "database": "connected",
         }
 
+    except Exception as e:
 
-    except Exception:
-
-        logger.exception(
-            "Database health check failed"
+        logger.error(
+            "Health check DB failure: %s",
+            e,
         )
 
         return JSONResponse(
@@ -171,7 +182,115 @@ def health_check():
 
 
 # ============================================================
-# ASK ENDPOINT
+# PAPERS
+# ============================================================
+
+@app.get("/papers")
+def get_papers():
+
+    try:
+
+        papers = list_papers()
+
+        return {
+            "papers": papers
+        }
+
+    except Exception:
+
+        logger.exception(
+            "Failed to load papers"
+        )
+
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not load indexed papers."
+            ),
+        )
+
+
+# ============================================================
+# UPLOAD
+# ============================================================
+
+@app.post("/upload")
+@limiter.limit("5/minute")
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+):
+
+    filename = file.filename or ""
+
+    logger.info(
+        "Upload started | filename=%s",
+        filename,
+    )
+
+    try:
+
+        file_bytes = await file.read()
+
+        result = add_document(
+            filename,
+            file_bytes,
+        )
+
+        logger.info(
+            "Upload completed | "
+            "filename=%s | chunks=%d",
+            result["filename"],
+            result["chunks"],
+        )
+
+        return {
+            "status": "success",
+            **result,
+        }
+
+    except FileExistsError as e:
+
+        logger.warning(
+            "Duplicate upload | filename=%s",
+            filename,
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except ValueError as e:
+
+        logger.warning(
+            "Invalid upload | filename=%s | error=%s",
+            filename,
+            e,
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Document upload failed | filename=%s",
+            filename,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "The document could not be indexed."
+            ),
+        )
+
+
+# ============================================================
+# ASK
 # ============================================================
 
 @app.post("/ask")
@@ -183,15 +302,21 @@ def ask(
 
     query = payload.query.strip()
 
+    source_file = (
+        payload.source_file.strip()
+        if payload.source_file
+        else None
+    )
 
     logger.info(
-        "Incoming question: %s",
+        "Incoming question | query=%s | paper=%s",
         query,
+        source_file or "ALL",
     )
 
 
     # ========================================================
-    # RETRIEVAL
+    # 1. RETRIEVAL
     # ========================================================
 
     try:
@@ -199,15 +324,16 @@ def ask(
         results = hybrid_search(
             query,
             top_k=payload.top_k,
+            source_file=source_file,
         )
-
 
         logger.info(
-            "Retrieved %d chunks | query=%s",
+            "Retrieved %d chunks | "
+            "query=%s | paper=%s",
             len(results),
             query,
+            source_file or "ALL",
         )
-
 
     except Exception:
 
@@ -216,27 +342,20 @@ def ask(
             query,
         )
 
-
         raise HTTPException(
             status_code=503,
             detail=(
-                "Search service is temporarily "
-                "unavailable. Please try again."
+                "Search failed. "
+                "Please try again."
             ),
         )
 
 
     # ========================================================
-    # NO RESULTS
+    # 2. NO RESULTS
     # ========================================================
 
     if not results:
-
-        logger.warning(
-            "No relevant documents found | query=%s",
-            query,
-        )
-
 
         def empty_stream():
 
@@ -245,23 +364,30 @@ def ask(
                     {
                         "sources": [],
                         "status": "no_results",
+                        "source_file": source_file,
                     }
                 )
                 + "\n---\n"
             )
 
+            if source_file:
 
-            yield (
-                "I couldn't find relevant information "
-                "in the indexed papers."
-            )
+                yield (
+                    "I couldn't find relevant "
+                    "information in the selected paper."
+                )
+
+            else:
+
+                yield (
+                    "I couldn't find relevant "
+                    "information in the indexed papers."
+                )
 
 
         return StreamingResponse(
             empty_stream(),
-            media_type=(
-                "text/plain; charset=utf-8"
-            ),
+            media_type="text/plain",
             headers={
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
@@ -270,28 +396,29 @@ def ask(
 
 
     # ========================================================
-    # BUILD CONTEXT
+    # 3. BUILD CONTEXT
     # ========================================================
 
     context_blocks = []
+
     sources = []
 
 
     for (
-        source_file,
+        result_source_file,
         chunk_idx,
         content,
         score,
     ) in results:
 
         context_blocks.append(
-            f"[Source: {source_file}]\n{content}"
+            f"[Source: {result_source_file}]\n"
+            f"{content}"
         )
-
 
         sources.append(
             {
-                "file": source_file,
+                "file": result_source_file,
                 "chunk": chunk_idx,
                 "score": round(
                     float(score),
@@ -301,39 +428,70 @@ def ask(
         )
 
 
-    context = (
-        "\n\n---\n\n"
-        .join(context_blocks)
+    context = "\n\n---\n\n".join(
+        context_blocks
     )
 
 
     # ========================================================
-    # RAG PROMPT
+    # 4. GROUNDED PROMPT
     # ========================================================
 
-    prompt = f"""
-You are a RAG assistant answering questions about
-foundational machine-learning research papers.
+    if source_file:
 
-Answer the user's question using ONLY the retrieved
-research-paper context below.
+        source_rule = f"""
+SELECTED PAPER:
+{source_file}
+
+STRICT PAPER ISOLATION RULE:
+
+The user selected ONE specific paper.
+
+Answer ONLY from information contained
+in the retrieved chunks from this selected paper.
+
+Do NOT use information from any other paper.
+
+Do NOT combine information from different papers.
+
+If the selected paper does not contain enough
+information to answer the question, say:
+
+"I couldn't find that information in the selected paper."
+
+Even if you know the answer from outside knowledge,
+do NOT use it.
+"""
+
+    else:
+
+        source_rule = """
+PAPER SELECTION:
+All indexed papers
+
+Answer only from the retrieved context.
+"""
+
+
+    prompt = f"""
+You are a RAG assistant answering questions
+about foundational machine-learning research papers.
 
 IMPORTANT RULES:
 
-1. Use only the retrieved context.
-2. Do not invent facts.
-3. Do not use outside knowledge.
-4. If the answer is not supported by the context,
-   say that the information was not found in the
-   indexed papers.
-5. Answer the question directly.
+1. Answer ONLY using the supplied retrieved context.
+2. Do not use outside knowledge.
+3. Do not invent facts.
+4. Preserve exact numbers, names,
+   equations, and technical terminology.
+5. Answer directly.
 6. Keep the answer concise but technically accurate.
-7. Preserve important numbers, names, equations,
-   and technical terminology.
-8. Do not mention your internal reasoning.
-9. Do not mention "the supplied context".
+7. Do not mention your internal reasoning.
+8. Do not mention "the supplied context".
 
-RETRIEVED RESEARCH CONTEXT:
+{source_rule}
+
+RETRIEVED CONTEXT:
 
 {context}
 
@@ -347,24 +505,27 @@ ANSWER:
 
     logger.info(
         "Prepared Gemini prompt | "
-        "context_chars=%d | sources=%d",
+        "context_chars=%d | "
+        "sources=%d | "
+        "paper=%s",
         len(context),
         len(sources),
+        source_file or "ALL",
     )
 
 
     # ========================================================
-    # STREAM RESPONSE
+    # 5. STREAM ANSWER
     # ========================================================
 
     def stream_response():
 
-        # Send sources first.
         yield (
             json.dumps(
                 {
                     "sources": sources,
                     "status": "generating",
+                    "source_file": source_file,
                 }
             )
             + "\n---\n"
@@ -377,20 +538,21 @@ ANSWER:
                 prompt
             )
 
-
             logger.info(
-                "Answer stream completed | query=%s",
+                "Answer stream completed | "
+                "query=%s | paper=%s",
                 query,
+                source_file or "ALL",
             )
-
 
         except Exception:
 
             logger.exception(
-                "Unexpected generation failure | query=%s",
+                "Streaming generation failed | "
+                "query=%s | paper=%s",
                 query,
+                source_file or "ALL",
             )
-
 
             yield (
                 "\n\n"
@@ -401,9 +563,7 @@ ANSWER:
 
     return StreamingResponse(
         stream_response(),
-        media_type=(
-            "text/plain; charset=utf-8"
-        ),
+        media_type="text/plain",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
