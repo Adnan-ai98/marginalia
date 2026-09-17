@@ -7,3 +7,4 @@ python-dotenv
 google-genai
 slowapi
 pypdf
+python-multipart
