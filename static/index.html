@@ -1,78 +1,406 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>arxiv-terminal — query the papers</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>▓</text></svg>">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        marginalia — query the papers
+    </title>
+
+    <link
+        rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>▓</text></svg>"
+    >
+
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+    >
+
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
 </head>
+
+
 <body>
 
 <div class="crt-wrap">
-<div class="terminal">
 
-  <div class="titlebar">
-    <div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-    <span class="titlebar-name">adnan@rag-papers: ~/six-papers</span>
-    <button class="reset-btn" id="reset-btn" title="Clear session">clear</button>
-  </div>
+    <div class="terminal">
 
-  <div class="screen" id="screen">
 
-    <div class="boot-lines">
-      <p class="line dim">$ rag --init --corpus ./papers/</p>
-      <p class="line dim">Indexed 6 papers → 359 chunks → pgvector (Supabase)</p>
-      <p class="line dim">Retriever: hybrid (dense + BM25, RRF fusion) · Generator: gemini-flash-latest</p>
-      <p class="line accent">Ready. Ask a question about the papers below, or click a sample query.</p>
+        <!-- ==================================================
+             TITLE BAR
+        =================================================== -->
+
+        <div class="titlebar">
+
+            <div class="dots">
+
+                <span class="dot red"></span>
+
+                <span class="dot yellow"></span>
+
+                <span class="dot green"></span>
+
+            </div>
+
+
+            <span class="titlebar-name">
+                adnan@rag-papers: ~/research
+            </span>
+
+
+            <button
+                class="reset-btn"
+                id="reset-btn"
+                type="button"
+                title="Clear session"
+            >
+                clear
+            </button>
+
+        </div>
+
+
+
+        <!-- ==================================================
+             SCREEN
+        =================================================== -->
+
+        <div
+            class="screen"
+            id="screen"
+        >
+
+
+            <!-- BOOT -->
+
+            <div class="boot-lines">
+
+                <p class="line dim">
+                    $ rag --init --corpus ./papers/
+                </p>
+
+                <p
+                    class="line dim"
+                    id="paper-status"
+                >
+                    Loading indexed papers…
+                </p>
+
+                <p class="line dim">
+                    Retriever: hybrid
+                    (dense + keyword, RRF fusion)
+                    · Generator: Gemini
+                </p>
+
+                <p class="line accent">
+                    Ready. Select a paper or use all papers,
+                    then ask your question.
+                </p>
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 PAPER CONTROL
+            =================================================== -->
+
+            <section class="paper-panel">
+
+                <div class="panel-heading">
+
+                    <span class="corpus-label">
+                        // paper scope
+                    </span>
+
+                    <span
+                        class="scope-badge"
+                        id="scope-badge"
+                    >
+                        ALL PAPERS
+                    </span>
+
+                </div>
+
+
+                <div class="paper-controls">
+
+
+                    <div class="select-wrap">
+
+                        <label
+                            for="paper-select"
+                            class="sr-only"
+                        >
+                            Select paper
+                        </label>
+
+                        <select
+                            id="paper-select"
+                        >
+
+                            <option value="">
+                                All Papers
+                            </option>
+
+                        </select>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="upload-btn"
+                        id="upload-btn"
+                    >
+                        <span>+</span>
+                        Add Paper
+                    </button>
+
+
+                    <input
+                        type="file"
+                        id="file-input"
+                        accept=".pdf,.md,.txt"
+                        hidden
+                    >
+
+                </div>
+
+
+                <div
+                    class="upload-status"
+                    id="upload-status"
+                ></div>
+
+
+            </section>
+
+
+
+            <!-- ==================================================
+                 INDEXED PAPERS
+            =================================================== -->
+
+            <div class="corpus-list">
+
+                <p class="corpus-label">
+                    // indexed papers
+                </p>
+
+                <ul id="paper-list">
+
+                    <li class="paper-loading">
+                        Loading…
+                    </li>
+
+                </ul>
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 SUGGESTIONS
+            =================================================== -->
+
+            <p class="corpus-label">
+                // try one, or type your own below
+            </p>
+
+
+            <div
+                class="suggestions"
+                id="suggestions"
+            >
+
+                <button
+                    class="chip"
+                    data-q="What is the scaled dot-product attention formula?"
+                >
+                    attention formula
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="How does multi-head attention work?"
+                >
+                    multi-head attention
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What pre-training objectives does BERT use?"
+                >
+                    BERT pretraining objectives
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What is masked language modeling?"
+                >
+                    masked language modeling
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="How does LoRA reduce the number of trainable parameters?"
+                >
+                    how LoRA works
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What LoRA rank works best according to the paper?"
+                >
+                    LoRA rank
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What quantization method does QLoRA use?"
+                >
+                    QLoRA quantization
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="How much memory does QLoRA save compared to full fine-tuning?"
+                >
+                    QLoRA memory
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What patch size does the Vision Transformer use?"
+                >
+                    ViT patch size
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="How does ViT compare to CNNs on image classification?"
+                >
+                    ViT vs CNNs
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="What is in-context learning in GPT-3?"
+                >
+                    in-context learning
+                </button>
+
+
+                <button
+                    class="chip"
+                    data-q="How many parameters does GPT-3 have?"
+                >
+                    GPT-3 size
+                </button>
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 ANSWERS
+            =================================================== -->
+
+            <div id="entries"></div>
+
+
+        </div>
+
+
+
+        <!-- ==================================================
+             QUERY INPUT
+        =================================================== -->
+
+        <form
+            class="input-line"
+            id="query-form"
+        >
+
+            <span class="prompt">
+                $
+            </span>
+
+
+            <input
+                type="text"
+                id="query-input"
+                placeholder="ask a question about the selected paper…"
+                autocomplete="off"
+                maxlength="500"
+            >
+
+
+            <span
+                class="cursor"
+                id="cursor"
+            ></span>
+
+
+            <button
+                type="submit"
+                id="submit-btn"
+            >
+                run
+            </button>
+
+        </form>
+
+
     </div>
 
-    <div class="corpus-list">
-      <p class="corpus-label">// indexed papers</p>
-      <ul>
-        <li><span class="tag">[1]</span> Attention Is All You Need <span class="dim">— Transformer architecture</span></li>
-        <li><span class="tag">[2]</span> BERT <span class="dim">— bidirectional pre-training</span></li>
-        <li><span class="tag">[3]</span> An Image Is Worth 16x16 Words <span class="dim">— Vision Transformer</span></li>
-        <li><span class="tag">[4]</span> LoRA <span class="dim">— low-rank adaptation</span></li>
-        <li><span class="tag">[5]</span> QLoRA <span class="dim">— 4-bit quantized fine-tuning</span></li>
-        <li><span class="tag">[6]</span> GPT-3 <span class="dim">— few-shot learning at scale</span></li>
-      </ul>
-    </div>
 
-    <p class="corpus-label">// try one, or type your own below</p>
-    <div class="suggestions" id="suggestions">
-      <button class="chip" data-q="What is the scaled dot-product attention formula?">attention formula</button>
-      <button class="chip" data-q="How does multi-head attention work?">multi-head attention</button>
-      <button class="chip" data-q="What pre-training objectives does BERT use?">BERT pretraining objectives</button>
-      <button class="chip" data-q="What is masked language modeling?">masked language modeling</button>
-      <button class="chip" data-q="How does LoRA reduce the number of trainable parameters?">how LoRA works</button>
-      <button class="chip" data-q="What LoRA rank works best according to the paper?">best LoRA rank</button>
-      <button class="chip" data-q="What quantization method does QLoRA use?">QLoRA quantization</button>
-      <button class="chip" data-q="How much memory does QLoRA save compared to full fine-tuning?">QLoRA memory savings</button>
-      <button class="chip" data-q="What patch size does the Vision Transformer use?">ViT patch size</button>
-      <button class="chip" data-q="How does ViT compare to CNNs on image classification?">ViT vs CNNs</button>
-      <button class="chip" data-q="What is in-context learning in GPT-3?">in-context learning</button>
-      <button class="chip" data-q="How many parameters does GPT-3 have?">GPT-3 size</button>
-    </div>
+    <p class="footnote">
+        Answers are generated only from retrieved paper content.
+        Selecting a paper isolates retrieval to that paper.
+    </p>
 
-    <div id="entries"></div>
-
-  </div>
-
-  <form class="input-line" id="query-form">
-    <span class="prompt">$</span>
-    <input type="text" id="query-input" placeholder="ask a question about the papers…" autocomplete="off" maxlength="500">
-    <span class="cursor" id="cursor"></span>
-    <button type="submit" id="submit-btn">run</button>
-  </form>
 
 </div>
-<p class="footnote">Answers are generated only from the indexed papers above — grounded, not memorized.</p>
-</div>
+
 
 <script src="script.js"></script>
+
 </body>
+
 </html>
